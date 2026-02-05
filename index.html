@@ -158,14 +158,14 @@
 
         // 2. Setup Firebase Configuration
         const firebaseConfig = {
-    apiKey: "AIzaSyDsF91R4dJTrA4Y1DX4wuVKUflJgNt_8U4",
-    authDomain: "logger-ba55c.firebaseapp.com",
-    projectId: "logger-ba55c",
-    storageBucket: "logger-ba55c.firebasestorage.app",
-    messagingSenderId: "329912268654",
-    appId: "1:329912268654:web:8dfc61cae5e677c906737f"
-  };
-
+            // PASTE YOUR CONFIG HERE
+            apiKey: "YOUR_API_KEY_HERE",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
