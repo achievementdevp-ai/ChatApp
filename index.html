@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chat App</title>
+    <style>
+        /* CSS: Styling the App */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        #chat-container {
+            width: 100%;
+            max-width: 500px;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            border-left: 1px solid #ddd;
+            border-right: 1px solid #ddd;
+        }
+
+        header {
+            background: #4a90e2;
+            color: white;
+            padding: 15px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        #message-window {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .message {
+            max-width: 70%;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+
+        .message.sent {
+            align-self: flex-end;
+            background-color: #0084ff;
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .message.received {
+            align-self: flex-start;
+            background-color: #e4e6eb;
+            color: black;
+            border-bottom-left-radius: 2px;
+        }
+
+        .sender-name {
+            font-size: 11px;
+            margin-bottom: 4px;
+            opacity: 0.7;
+            display: block;
+        }
+
+        #input-area {
+            padding: 15px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            outline: none;
+        }
+
+        button {
+            background: #0084ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background: #0073e6;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="chat-container">
+        <header>My Chat App</header>
+        
+        <!-- Where messages appear -->
+        <div id="message-window"></div>
+
+        <!-- Input area -->
+        <div id="input-area">
+            <input type="text" id="message-input" placeholder="Type a message...">
+            <button id="send-btn">Send</button>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT Logic -->
+    <script type="module">
+        // 1. Import Firebase functions from the SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc, 
+            query, 
+            orderBy, 
+            onSnapshot,
+            serverTimestamp 
+        } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+
+        // 2. Setup Firebase Configuration
+        // PASTE YOUR CONFIG OBJECT BELOW
+        const firebaseConfig = {
+    apiKey: "AIzaSyDsF91R4dJTrA4Y1DX4wuVKUflJgNt_8U4",
+    authDomain: "logger-ba55c.firebaseapp.com",
+    projectId: "logger-ba55c",
+    storageBucket: "logger-ba55c.firebasestorage.app",
+    messagingSenderId: "329912268654",
+    appId: "1:329912268654:web:8dfc61cae5e677c906737f"
+  };
+
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        // 3. DOM Elements
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const messageWindow = document.getElementById('message-window');
+
+        // Ask for a username (simple prompt)
+        let username = prompt("Enter your name:") || "Anonymous";
+
+        // 4. Function to Send Messages
+        async function sendMessage() {
+            const text = messageInput.value.trim();
+            if (text !== "") {
+                try {
+                    // Add a new document with a generated ID to the 'messages' collection
+                    await addDoc(collection(db, "messages"), {
+                        text: text,
+                        sender: username,
+                        createdAt: serverTimestamp() // Server time ensures sync
+                    });
+                    messageInput.value = ""; // Clear input
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                }
+            }
+        }
+
+        // Event Listeners for sending
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // 5. Function to Load and Listen for Messages (Real-time)
+        const q = query(collection(db, "messages"), orderBy("createdAt"));
+
+        // onSnapshot listens for changes in the database automatically
+        onSnapshot(q, (snapshot) => {
+            messageWindow.innerHTML = ""; // Clear current list to re-render (simple approach)
+            
+            snapshot.forEach((doc) => {
+                const data = doc.data();
+                const msgDiv = document.createElement('div');
+                
+                // Style based on sender
+                const isMe = data.sender === username;
+                msgDiv.classList.add('message');
+                msgDiv.classList.add(isMe ? 'sent' : 'received');
+
+                // Add content
+                msgDiv.innerHTML = `
+                    <span class="sender-name">${data.sender}</span>
+                    ${data.text}
+                `;
+
+                messageWindow.appendChild(msgDiv);
+            });
+
+            // Auto-scroll to bottom
+            messageWindow.scrollTop = messageWindow.scrollHeight;
+        });
+
+    </script>
+</body>
+</html>
