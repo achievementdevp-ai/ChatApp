@@ -2,18 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>tapApp</title>
     <style>
         /* CSS: General Styling */
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: #f0f2f5;
             display: flex;
             justify-content: center;
-            height: 100vh;
+            /* 100dvh handles mobile address bars and keyboard resizing better than 100vh */
+            height: 100dvh; 
+            width: 100%;
             margin: 0;
-            overflow: hidden;
+            overflow: hidden; /* Prevents the whole page from scrolling */
         }
 
         /* --- LOGIN SCREEN STYLES --- */
@@ -23,7 +25,7 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(255, 255, 255, 0.95);
+            background: white;
             display: flex;
             flex-direction: column;
             justify-content: center;
@@ -33,28 +35,31 @@
 
         .login-card {
             background: white;
-            padding: 40px;
-            border-radius: 12px;
+            padding: 30px;
+            border-radius: 16px;
             box-shadow: 0 4px 20px rgba(0,0,0,0.1);
             text-align: center;
-            width: 300px;
+            width: 85%;
+            max-width: 320px;
         }
 
         .login-card h2 {
             margin-top: 0;
             color: #333;
+            margin-bottom: 5px;
         }
 
         .login-input {
             width: 100%;
-            padding: 12px;
+            padding: 14px;
             margin: 15px 0;
             border: 2px solid #ddd;
-            border-radius: 8px;
+            border-radius: 12px;
             box-sizing: border-box; /* Ensures padding doesn't expand width */
-            font-size: 16px;
+            font-size: 16px; /* 16px prevents iOS zoom */
             outline: none;
             transition: border-color 0.3s;
+            -webkit-appearance: none; /* Removes iOS inner shadow */
         }
 
         .login-input:focus {
@@ -65,9 +70,9 @@
             background: #4a90e2;
             color: white;
             border: none;
-            padding: 12px;
+            padding: 14px;
             width: 100%;
-            border-radius: 8px;
+            border-radius: 12px;
             font-size: 16px;
             cursor: pointer;
             font-weight: bold;
@@ -82,7 +87,7 @@
             color: #d93025;
             font-size: 14px;
             margin-top: 10px;
-            min-height: 20px; /* Keeps layout stable */
+            min-height: 20px;
             opacity: 0;
             transition: opacity 0.3s;
         }
@@ -90,14 +95,13 @@
         /* --- CHAT STYLES --- */
         #chat-container {
             width: 100%;
-            max-width: 500px;
+            max-width: 600px; /* Wider on tablets, full on mobile */
             background: white;
-            display: flex; /* Hidden initially via JS logic, but defaults to flex structure */
-            flex-direction: column;
-            border-left: 1px solid #ddd;
-            border-right: 1px solid #ddd;
-            height: 100%;
             display: none; /* Hidden until login */
+            flex-direction: column;
+            height: 100%;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.05);
         }
 
         header {
@@ -107,17 +111,20 @@
             text-align: center;
             font-weight: bold;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            flex-shrink: 0; /* Header won't shrink */
+            z-index: 10;
         }
 
         #message-window {
-            flex: 1;
+            flex: 1; /* Takes up remaining space */
             padding: 20px;
-            overflow-y: auto;
+            overflow-y: auto; /* Scrollable area */
             display: flex;
             flex-direction: column;
             gap: 10px;
-            background-image: linear-gradient(#f0f2f5 50%, transparent 50%);
-            background-size: 100% 20px;
+            background-color: #fff;
+            padding-bottom: 20px; /* Space at bottom */
+            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
         }
 
         .message {
@@ -128,7 +135,7 @@
             line-height: 1.4;
             word-wrap: break-word;
             position: relative;
-            box-shadow: 0 1px 1px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 1px rgba(0,0,0,0.08);
         }
 
         .message.sent {
@@ -154,20 +161,24 @@
         }
 
         #input-area {
-            padding: 15px;
+            padding: 12px 15px; /* Reduced padding slightly for mobile */
             border-top: 1px solid #ddd;
             display: flex;
             gap: 10px;
             background: white;
+            align-items: center;
+            flex-shrink: 0; /* Input area won't shrink */
         }
 
+        /* Mobile Input Fixes */
         input[type="text"] {
             flex: 1;
             padding: 12px;
             border: 1px solid #ddd;
-            border-radius: 20px;
+            border-radius: 24px;
             outline: none;
-            font-size: 15px;
+            font-size: 16px !important; /* Crucial for preventing iOS zoom */
+            -webkit-appearance: none;
         }
 
         input[type="text"]:focus {
@@ -178,15 +189,23 @@
             background: #0084ff;
             color: white;
             border: none;
-            padding: 0 20px;
-            border-radius: 20px;
+            padding: 10px 20px;
+            border-radius: 24px;
             cursor: pointer;
             font-weight: bold;
+            font-size: 14px;
+            flex-shrink: 0; /* Prevent button squashing */
             transition: background 0.2s;
+            height: 42px; /* Match input height roughly */
+            line-height: 20px;
         }
 
         #send-btn:hover {
             background: #0073e6;
+        }
+        
+        #send-btn:active {
+            transform: scale(0.96);
         }
     </style>
 </head>
@@ -196,11 +215,10 @@
     <div id="login-overlay">
         <div class="login-card">
             <h2>Apptap Login</h2>
-            <p style="color: #666; font-size: 14px;">Restricted access</p>
             
             <input type="text" id="login-username" class="login-input" placeholder="Enter username..." autocomplete="off">
             
-            <button id="login-btn" class="login-btn">Enter name</button>
+            <button id="login-btn" class="login-btn">Enter Chat</button>
             
             <div id="error-message">Access Denied: User not allowed.</div>
         </div>
@@ -215,7 +233,7 @@
 
         <!-- Input area -->
         <div id="input-area">
-            <input type="text" id="message-input" placeholder="Type a message...">
+            <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
             <button id="send-btn">Send</button>
         </div>
     </div>
@@ -265,8 +283,8 @@
         function attemptLogin() {
             const inputName = loginInput.value.trim();
             
-            // STRICT CHECK: Only 'bon' and 'alice' allowed
-            if (inputName === 'bon' || inputName === 'alice') {
+            // STRICT CHECK: Only 'bob' and 'alice' allowed
+            if (inputName === 'bob' || inputName === 'alice') {
                 username = inputName;
                 
                 // Hide Login
@@ -282,7 +300,7 @@
                 // Show Error
                 errorMsg.style.opacity = '1';
                 loginInput.style.borderColor = '#d93025';
-                // Shake animation for feedback
+                // Shake animation
                 const card = document.querySelector('.login-card');
                 card.animate([
                     { transform: 'translateX(0)' },
@@ -313,14 +331,28 @@
                 const text = messageInput.value.trim();
                 if (text !== "") {
                     try {
+                        // Disable button to prevent double tap
+                        sendBtn.disabled = true;
+                        sendBtn.style.opacity = "0.7";
+                        
                         await addDoc(collection(db, "messages"), {
                             text: text,
                             sender: username,
                             createdAt: serverTimestamp()
                         });
                         messageInput.value = "";
+                        
+                        // Re-enable button
+                        sendBtn.disabled = false;
+                        sendBtn.style.opacity = "1";
+                        
+                        // Focus back on input for mobile typing
+                        messageInput.focus();
+                        
                     } catch (e) {
                         console.error("Error adding document: ", e);
+                        sendBtn.disabled = false;
+                        sendBtn.style.opacity = "1";
                     }
                 }
             }
@@ -335,14 +367,11 @@
             const q = query(collection(db, "messages"), orderBy("createdAt"));
 
             onSnapshot(q, (snapshot) => {
-                // Optional: Optimization to prevent flickering (Simple approach used here)
-                // In a larger app, you would diff the DOM, but clearing is fine for this scale.
                 messageWindow.innerHTML = ""; 
                 
                 snapshot.forEach((doc) => {
                     const data = doc.data();
                     
-                    // Ensure we have data before rendering
                     if(!data.text) return; 
 
                     const msgDiv = document.createElement('div');
@@ -351,9 +380,12 @@
                     msgDiv.classList.add('message');
                     msgDiv.classList.add(isMe ? 'sent' : 'received');
 
+                    // Escape HTML to prevent XSS
+                    const safeText = data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
                     msgDiv.innerHTML = `
                         <span class="sender-name">${data.sender}</span>
-                        ${data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;")} 
+                        ${safeText}
                     `;
 
                     messageWindow.appendChild(msgDiv);
