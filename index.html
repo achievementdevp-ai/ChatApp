@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>tapApp</title>
+    <title>tapApp - Restricted Access</title>
     <style>
         /* CSS: General Styling */
         body {
@@ -11,11 +11,10 @@
             background-color: #f0f2f5;
             display: flex;
             justify-content: center;
-            /* 100dvh handles mobile address bars and keyboard resizing better than 100vh */
             height: 100dvh; 
             width: 100%;
             margin: 0;
-            overflow: hidden; /* Prevents the whole page from scrolling */
+            overflow: hidden;
         }
 
         /* --- LOGIN SCREEN STYLES --- */
@@ -55,11 +54,11 @@
             margin: 15px 0;
             border: 2px solid #ddd;
             border-radius: 12px;
-            box-sizing: border-box; /* Ensures padding doesn't expand width */
-            font-size: 16px; /* 16px prevents iOS zoom */
+            box-sizing: border-box;
+            font-size: 16px; /* Prevents iOS zoom */
             outline: none;
             transition: border-color 0.3s;
-            -webkit-appearance: none; /* Removes iOS inner shadow */
+            -webkit-appearance: none;
         }
 
         .login-input:focus {
@@ -95,7 +94,7 @@
         /* --- CHAT STYLES --- */
         #chat-container {
             width: 100%;
-            max-width: 600px; /* Wider on tablets, full on mobile */
+            max-width: 600px;
             background: white;
             display: none; /* Hidden until login */
             flex-direction: column;
@@ -111,73 +110,118 @@
             text-align: center;
             font-weight: bold;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            flex-shrink: 0; /* Header won't shrink */
+            flex-shrink: 0;
             z-index: 10;
         }
 
         #message-window {
-            flex: 1; /* Takes up remaining space */
+            flex: 1;
             padding: 20px;
-            overflow-y: auto; /* Scrollable area */
+            overflow-y: auto;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 12px;
             background-color: #fff;
-            padding-bottom: 20px; /* Space at bottom */
-            -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+            padding-bottom: 20px;
+            -webkit-overflow-scrolling: touch;
         }
 
         .message {
             max-width: 75%;
-            padding: 10px 15px;
-            border-radius: 18px;
+            padding: 0; /* Padding moved to inner bubble */
             font-size: 15px;
             line-height: 1.4;
             word-wrap: break-word;
             position: relative;
-            box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
         }
 
         .message.sent {
             align-self: flex-end;
+            align-items: flex-end; /* Align content to right */
+        }
+
+        .message.received {
+            align-self: flex-start;
+            align-items: flex-start; /* Align content to left */
+        }
+
+        /* The bubble background */
+        .msg-bubble {
+            padding: 10px 15px;
+            border-radius: 18px;
+            position: relative;
+            display: inline-block;
+            max-width: 100%;
+        }
+
+        .message.sent .msg-bubble {
             background-color: #0084ff;
             color: white;
             border-bottom-right-radius: 4px;
         }
 
-        .message.received {
-            align-self: flex-start;
+        .message.received .msg-bubble {
             background-color: #e4e6eb;
             color: black;
             border-bottom-left-radius: 4px;
         }
 
+        /* Container for text and icon */
+        .msg-content {
+            display: flex;
+            align-items: flex-end; /* Align icon with bottom of text */
+            gap: 6px;
+            justify-content: flex-end; /* Align items to right within the bubble */
+        }
+
+        .message.received .msg-content {
+            justify-content: flex-start; /* Left align for received */
+        }
+
         .sender-name {
             font-size: 11px;
             margin-bottom: 4px;
-            opacity: 0.8;
+            opacity: 0.7;
             display: block;
             font-weight: 600;
+            margin-left: 2px;
+        }
+
+        /* --- STATUS ICON (2 CROCHETS) --- */
+        .status-icon {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0; /* Don't squish the icon */
+            opacity: 0.8;
+            margin-bottom: 2px; /* Slight offset to align with text baseline */
+        }
+        
+        /* Blue checkmarks color */
+        .status-icon svg {
+            fill: #a3d2fc; /* Light blue for better contrast on dark blue bubble */
+            width: 100%;
+            height: 100%;
         }
 
         #input-area {
-            padding: 12px 15px; /* Reduced padding slightly for mobile */
+            padding: 12px 15px;
             border-top: 1px solid #ddd;
             display: flex;
             gap: 10px;
             background: white;
             align-items: center;
-            flex-shrink: 0; /* Input area won't shrink */
+            flex-shrink: 0;
         }
 
-        /* Mobile Input Fixes */
         input[type="text"] {
             flex: 1;
             padding: 12px;
             border: 1px solid #ddd;
             border-radius: 24px;
             outline: none;
-            font-size: 16px !important; /* Crucial for preventing iOS zoom */
+            font-size: 16px !important;
             -webkit-appearance: none;
         }
 
@@ -194,9 +238,9 @@
             cursor: pointer;
             font-weight: bold;
             font-size: 14px;
-            flex-shrink: 0; /* Prevent button squashing */
+            flex-shrink: 0;
             transition: background 0.2s;
-            height: 42px; /* Match input height roughly */
+            height: 42px;
             line-height: 20px;
         }
 
@@ -215,6 +259,7 @@
     <div id="login-overlay">
         <div class="login-card">
             <h2>Apptap Login</h2>
+            <p style="color: #888; font-size: 13px;">Restricted to Bob & Alice</p>
             
             <input type="text" id="login-username" class="login-input" placeholder="Enter username..." autocomplete="off">
             
@@ -300,7 +345,6 @@
                 // Show Error
                 errorMsg.style.opacity = '1';
                 loginInput.style.borderColor = '#d93025';
-                // Shake animation
                 const card = document.querySelector('.login-card');
                 card.animate([
                     { transform: 'translateX(0)' },
@@ -311,27 +355,23 @@
             }
         }
 
-        // Login Listeners
         loginBtn.addEventListener('click', attemptLogin);
         loginInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') attemptLogin();
-            // Hide error when user types again
             errorMsg.style.opacity = '0';
             loginInput.style.borderColor = '#ddd';
         });
 
 
-        // 4. INITIALIZE CHAT (Only runs after successful login)
+        // 4. INITIALIZE CHAT
         function initChatApp() {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
 
-            // Setup Send Function
             async function sendMessage() {
                 const text = messageInput.value.trim();
                 if (text !== "") {
                     try {
-                        // Disable button to prevent double tap
                         sendBtn.disabled = true;
                         sendBtn.style.opacity = "0.7";
                         
@@ -342,11 +382,8 @@
                         });
                         messageInput.value = "";
                         
-                        // Re-enable button
                         sendBtn.disabled = false;
                         sendBtn.style.opacity = "1";
-                        
-                        // Focus back on input for mobile typing
                         messageInput.focus();
                         
                     } catch (e) {
@@ -357,13 +394,11 @@
                 }
             }
 
-            // Attach Send Listeners
             sendBtn.addEventListener('click', sendMessage);
             messageInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') sendMessage();
             });
 
-            // Setup Real-time Listener
             const q = query(collection(db, "messages"), orderBy("createdAt"));
 
             onSnapshot(q, (snapshot) => {
@@ -371,7 +406,6 @@
                 
                 snapshot.forEach((doc) => {
                     const data = doc.data();
-                    
                     if(!data.text) return; 
 
                     const msgDiv = document.createElement('div');
@@ -380,18 +414,45 @@
                     msgDiv.classList.add('message');
                     msgDiv.classList.add(isMe ? 'sent' : 'received');
 
-                    // Escape HTML to prevent XSS
+                    // HTML Structure:
+                    // <div class="sender-name">Name</div>
+                    // <div class="msg-bubble">
+                    //    <div class="msg-content">
+                    //       <span>Text</span>
+                    //       <div class="status-icon">...SVG...</div> (Only if isMe)
+                    //    </div>
+                    // </div>
+
                     const safeText = data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                    
+                    // The SVG for the "2 Crochets" (Double Check)
+                    const doubleCheckIcon = `
+                        <div class="status-icon" title="Delivered">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M18 7l-1.41-1.41-6.34 6.34 1.41 1.41L18 7zm4.24-1.41L11.66 16.17 7.48 12l-1.41 1.41L11.66 19l12-12-1.42-1.41zM.41 13.41L6 19l1.41-1.41L1.83 12 .41 13.41z"/>
+                            </svg>
+                        </div>
+                    `;
+
+                    let contentHtml = `<span>${safeText}</span>`;
+                    
+                    // Add icon ONLY if I sent the message
+                    if (isMe) {
+                        contentHtml += doubleCheckIcon;
+                    }
 
                     msgDiv.innerHTML = `
                         <span class="sender-name">${data.sender}</span>
-                        ${safeText}
+                        <div class="msg-bubble">
+                            <div class="msg-content">
+                                ${contentHtml}
+                            </div>
+                        </div>
                     `;
 
                     messageWindow.appendChild(msgDiv);
                 });
 
-                // Auto-scroll
                 messageWindow.scrollTop = messageWindow.scrollHeight;
             });
         }
