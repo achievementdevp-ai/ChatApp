@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>tapApp - Restricted Access</title>
+    <title>tapApp - Online Status</title>
     <style>
         /* CSS: General Styling */
         body {
@@ -106,14 +106,62 @@
         header {
             background: #4a90e2;
             color: white;
-            padding: 15px;
-            text-align: center;
-            font-weight: bold;
+            padding: 10px 15px 15px 15px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             flex-shrink: 0;
             z-index: 10;
         }
 
+        header h1 {
+            margin: 0 0 10px 0;
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        /* --- STATUS ROW --- */
+        .status-row {
+            display: flex;
+            gap: 15px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .user-pill {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 4px 12px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 0.3s;
+        }
+
+        .user-pill.active-user {
+            background: rgba(255, 255, 255, 0.35);
+            border: 1px solid rgba(255,255,255,0.4);
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #9aa0a6; /* Default Gray (Offline) */
+            transition: background-color 0.3s;
+            box-shadow: 0 0 2px rgba(0,0,0,0.2);
+        }
+
+        .status-dot.online {
+            background-color: #31a24c; /* Green (Online) */
+            box-shadow: 0 0 4px rgba(49, 162, 76, 0.6);
+        }
+
+        /* --- MESSAGES --- */
         #message-window {
             flex: 1;
             padding: 20px;
@@ -128,7 +176,7 @@
 
         .message {
             max-width: 75%;
-            padding: 0; /* Padding moved to inner bubble */
+            padding: 0; 
             font-size: 15px;
             line-height: 1.4;
             word-wrap: break-word;
@@ -139,15 +187,14 @@
 
         .message.sent {
             align-self: flex-end;
-            align-items: flex-end; /* Align content to right */
+            align-items: flex-end; 
         }
 
         .message.received {
             align-self: flex-start;
-            align-items: flex-start; /* Align content to left */
+            align-items: flex-start; 
         }
 
-        /* The bubble background */
         .msg-bubble {
             padding: 10px 15px;
             border-radius: 18px;
@@ -168,16 +215,15 @@
             border-bottom-left-radius: 4px;
         }
 
-        /* Container for text and icon */
         .msg-content {
             display: flex;
-            align-items: flex-end; /* Align icon with bottom of text */
+            align-items: flex-end; 
             gap: 6px;
-            justify-content: flex-end; /* Align items to right within the bubble */
+            justify-content: flex-end; 
         }
 
         .message.received .msg-content {
-            justify-content: flex-start; /* Left align for received */
+            justify-content: flex-start; 
         }
 
         .sender-name {
@@ -189,18 +235,16 @@
             margin-left: 2px;
         }
 
-        /* --- STATUS ICON (2 CROCHETS) --- */
         .status-icon {
             width: 18px;
             height: 18px;
-            flex-shrink: 0; /* Don't squish the icon */
+            flex-shrink: 0; 
             opacity: 0.8;
-            margin-bottom: 2px; /* Slight offset to align with text baseline */
+            margin-bottom: 2px; 
         }
         
-        /* Blue checkmarks color */
         .status-icon svg {
-            fill: #a3d2fc; /* Light blue for better contrast on dark blue bubble */
+            fill: #a3d2fc; 
             width: 100%;
             height: 100%;
         }
@@ -259,7 +303,6 @@
     <div id="login-overlay">
         <div class="login-card">
             <h2>Apptap Login</h2>
-            <p style="color: #888; font-size: 13px;">Restricted to Bob & Alice</p>
             
             <input type="text" id="login-username" class="login-input" placeholder="Enter username..." autocomplete="off">
             
@@ -271,12 +314,22 @@
 
     <!-- CHAT CONTAINER -->
     <div id="chat-container">
-        <header>Apptap <span style="font-weight:normal; font-size: 0.8em; opacity: 0.8;">(Logged in as <span id="current-user-display"></span>)</span></header>
+        <header>
+            <h1>Apptap</h1>
+            <div class="status-row">
+                <div id="pill-bob" class="user-pill">
+                    <div id="dot-bob" class="status-dot"></div>
+                    Bob
+                </div>
+                <div id="pill-alice" class="user-pill">
+                    <div id="dot-alice" class="status-dot"></div>
+                    Alice
+                </div>
+            </div>
+        </header>
         
-        <!-- Where messages appear -->
         <div id="message-window"></div>
 
-        <!-- Input area -->
         <div id="input-area">
             <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
             <button id="send-btn">Send</button>
@@ -285,7 +338,6 @@
 
     <!-- JAVASCRIPT Logic -->
     <script type="module">
-        // 1. Import Firebase functions
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
         import { 
             getFirestore, 
@@ -294,10 +346,12 @@
             query, 
             orderBy, 
             onSnapshot,
-            serverTimestamp 
+            serverTimestamp,
+            doc,
+            setDoc,
+            updateDoc
         } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
-        // 2. Firebase Configuration
         const firebaseConfig = {
             apiKey: "AIzaSyDsF91R4dJTrA4Y1DX4wuVKUflJgNt_8U4",
             authDomain: "logger-ba55c.firebaseapp.com",
@@ -307,42 +361,39 @@
             appId: "1:329912268654:web:8dfc61cae5e677c906737f"
         };
 
-        // Initialize Firebase variables
         let db;
         let username = "";
+        let heartbeatInterval;
 
-        // --- DOM ELEMENTS FOR LOGIN ---
         const loginOverlay = document.getElementById('login-overlay');
         const loginInput = document.getElementById('login-username');
         const loginBtn = document.getElementById('login-btn');
         const errorMsg = document.getElementById('error-message');
-
-        // --- DOM ELEMENTS FOR CHAT ---
         const chatContainer = document.getElementById('chat-container');
         const messageInput = document.getElementById('message-input');
         const sendBtn = document.getElementById('send-btn');
         const messageWindow = document.getElementById('message-window');
-        const currentUserDisplay = document.getElementById('current-user-display');
+        const pillBob = document.getElementById('pill-bob');
+        const dotBob = document.getElementById('dot-bob');
+        const pillAlice = document.getElementById('pill-alice');
+        const dotAlice = document.getElementById('dot-alice');
 
-        // 3. LOGIN LOGIC
         function attemptLogin() {
-            const inputName = loginInput.value.trim();
+            const inputName = loginInput.value.trim().toLowerCase();
             
-            // STRICT CHECK: Only 'bob' and 'alice' allowed
             if (inputName === 'bob' || inputName === 'alice') {
                 username = inputName;
-                
-                // Hide Login
                 loginOverlay.style.display = 'none';
-                
-                // Show Chat
                 chatContainer.style.display = 'flex';
-                currentUserDisplay.textContent = username;
 
-                // Initialize the Chat App
+                if (username === 'bob') {
+                    pillBob.classList.add('active-user');
+                } else {
+                    pillAlice.classList.add('active-user');
+                }
+
                 initChatApp();
             } else {
-                // Show Error
                 errorMsg.style.opacity = '1';
                 loginInput.style.borderColor = '#d93025';
                 const card = document.querySelector('.login-card');
@@ -362,12 +413,14 @@
             loginInput.style.borderColor = '#ddd';
         });
 
-
-        // 4. INITIALIZE CHAT
         function initChatApp() {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
 
+            // --- PRESENCE SYSTEM (Starts immediately) ---
+            initPresenceSystem(db, username);
+
+            // --- MESSAGING SYSTEM ---
             async function sendMessage() {
                 const text = messageInput.value.trim();
                 if (text !== "") {
@@ -414,18 +467,8 @@
                     msgDiv.classList.add('message');
                     msgDiv.classList.add(isMe ? 'sent' : 'received');
 
-                    // HTML Structure:
-                    // <div class="sender-name">Name</div>
-                    // <div class="msg-bubble">
-                    //    <div class="msg-content">
-                    //       <span>Text</span>
-                    //       <div class="status-icon">...SVG...</div> (Only if isMe)
-                    //    </div>
-                    // </div>
-
                     const safeText = data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                     
-                    // The SVG for the "2 Crochets" (Double Check)
                     const doubleCheckIcon = `
                         <div class="status-icon" title="Delivered">
                             <svg viewBox="0 0 24 24">
@@ -435,8 +478,6 @@
                     `;
 
                     let contentHtml = `<span>${safeText}</span>`;
-                    
-                    // Add icon ONLY if I sent the message
                     if (isMe) {
                         contentHtml += doubleCheckIcon;
                     }
@@ -454,6 +495,91 @@
                 });
 
                 messageWindow.scrollTop = messageWindow.scrollHeight;
+            });
+        }
+
+        function initPresenceSystem(db, currentUser) {
+            const usersRef = collection(db, "users");
+            const myUserRef = doc(db, "users", currentUser);
+
+            const goOnline = async () => {
+                try {
+                    await setDoc(myUserRef, {
+                        state: 'online',
+                        lastSeen: serverTimestamp()
+                    }, { merge: true });
+                    console.log(`User ${currentUser} is now online`);
+                } catch (e) {
+                    console.error("Go Online Error:", e);
+                }
+            };
+
+            const goOffline = async () => {
+                try {
+                    await setDoc(myUserRef, {
+                        state: 'offline',
+                        lastSeen: serverTimestamp()
+                    }, { merge: true });
+                } catch (e) {
+                    console.error("Go Offline Error:", e);
+                }
+            };
+
+            const startHeartbeat = () => {
+                goOnline(); // Initial call
+                heartbeatInterval = setInterval(async () => {
+                    try {
+                        await updateDoc(myUserRef, {
+                            lastSeen: serverTimestamp()
+                        });
+                        console.log("Heartbeat sent");
+                    } catch (e) {
+                        console.error("Heartbeat Error:", e);
+                    }
+                }, 30000); // 30 seconds
+            };
+
+            const listenToUsers = () => {
+                onSnapshot(usersRef, (snapshot) => {
+                    const now = Date.now();
+                    
+                    snapshot.forEach((docSnap) => {
+                        const user = docSnap.id;
+                        const data = docSnap.data();
+                        
+                        let targetDot = null;
+                        if (user === 'bob') targetDot = dotBob;
+                        if (user === 'alice') targetDot = dotAlice;
+
+                        if (targetDot) {
+                            // Safety check for timestamp
+                            let lastSeen = 0;
+                            if (data.lastSeen && typeof data.lastSeen.toMillis === 'function') {
+                                lastSeen = data.lastSeen.toMillis();
+                            }
+                            
+                            const timeDiff = now - lastSeen;
+                            console.log(`Checking ${user}: Diff is ${timeDiff}ms`);
+                            
+                            // If timestamp is recent (less than 60s)
+                            if (timeDiff < 60000) {
+                                targetDot.classList.add('online');
+                            } else {
+                                targetDot.classList.remove('online');
+                            }
+                        }
+                    });
+                });
+            };
+
+            // FIX: Execute directly, do not wrap in window.addEventListener('load')
+            // By the time this function runs, the app is already loaded.
+            startHeartbeat();
+            listenToUsers();
+
+            window.addEventListener('beforeunload', () => {
+                goOffline();
+                clearInterval(heartbeatInterval);
             });
         }
     </script>
