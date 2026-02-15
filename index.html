@@ -120,6 +120,35 @@
             font-size: 18px;
             font-weight: 700;
             letter-spacing: 0.5px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        /* --- CALL BUTTON IN HEADER --- */
+        #call-btn {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: none; /* Hidden by default, shown on login */
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 18px;
+            position: absolute;
+            right: 15px;
+            top: 0;
+            transition: all 0.2s;
+        }
+
+        #call-btn:active {
+            background: rgba(255,255,255,0.4);
+            transform: scale(0.95);
         }
 
         /* --- STATUS ROW --- */
@@ -159,6 +188,94 @@
         .status-dot.online {
             background-color: #31a24c; /* Green (Online) */
             box-shadow: 0 0 4px rgba(49, 162, 76, 0.6);
+        }
+
+        /* --- CALL OVERLAY STYLES --- */
+        #call-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(20, 20, 25, 0.95);
+            backdrop-filter: blur(10px);
+            z-index: 2000;
+            display: none; /* Hidden by default */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            transition: opacity 0.3s;
+        }
+
+        .call-avatar {
+            width: 120px;
+            height: 120px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .call-status {
+            font-size: 24px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .call-substatus {
+            font-size: 16px;
+            color: rgba(255,255,255,0.6);
+            margin-bottom: 60px;
+        }
+
+        .call-controls {
+            display: flex;
+            gap: 40px;
+        }
+
+        .call-action-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .call-action-btn:active {
+            transform: scale(0.9);
+        }
+
+        .btn-accept {
+            background: #31a24c;
+            color: white;
+        }
+
+        .btn-decline {
+            background: #d93025;
+            color: white;
+        }
+
+        /* Pulse Animation for Ringing */
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(118, 75, 162, 0.4); }
+            70% { box-shadow: 0 0 0 20px rgba(118, 75, 162, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(118, 75, 162, 0); }
+        }
+
+        .pulsing .call-avatar {
+            animation: pulse 1.5s infinite;
         }
 
         /* --- MESSAGES --- */
@@ -324,7 +441,11 @@
     <!-- CHAT CONTAINER -->
     <div id="chat-container">
         <header>
-            <h1>Apptap</h1>
+            <h1>
+                Apptap
+                <!-- CALL BUTTON -->
+                <button id="call-btn" title="Start Call">📞</button>
+            </h1>
             <div class="status-row">
                 <div id="pill-bob" class="user-pill">
                     <div id="dot-bob" class="status-dot"></div>
@@ -343,6 +464,23 @@
             <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off">
             <button id="send-btn">Send</button>
         </div>
+
+        <!-- CALL INTERFACE OVERLAY -->
+        <div id="call-overlay">
+            <div class="call-avatar" id="call-avatar-text">?</div>
+            <div class="call-status" id="call-status-text">Calling...</div>
+            <div class="call-substatus" id="call-timer">00:00</div>
+            
+            <div class="call-controls" id="call-controls-ring">
+                <button class="call-action-btn btn-decline" id="btn-reject">✖</button>
+                <button class="call-action-btn btn-accept" id="btn-accept" style="display:none">✔</button>
+            </div>
+
+            <!-- Connected Controls -->
+            <div class="call-controls" id="call-controls-active" style="display:none">
+                <button class="call-action-btn btn-decline" id="btn-end">📞</button>
+            </div>
+        </div>
     </div>
 
     <!-- JAVASCRIPT Logic -->
@@ -358,7 +496,9 @@
             serverTimestamp,
             doc,
             setDoc,
-            updateDoc
+            updateDoc,
+            where,
+            deleteDoc
         } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -373,6 +513,9 @@
         let db;
         let username = "";
         let heartbeatInterval;
+        let currentCallId = null;
+        let callTimerInterval = null;
+        let callSeconds = 0;
 
         const loginOverlay = document.getElementById('login-overlay');
         const loginInput = document.getElementById('login-username');
@@ -387,6 +530,18 @@
         const pillAlice = document.getElementById('pill-alice');
         const dotAlice = document.getElementById('dot-alice');
 
+        // Call Elements
+        const callBtn = document.getElementById('call-btn');
+        const callOverlay = document.getElementById('call-overlay');
+        const callAvatarText = document.getElementById('call-avatar-text');
+        const callStatusText = document.getElementById('call-status-text');
+        const callTimerDisplay = document.getElementById('call-timer');
+        const btnReject = document.getElementById('btn-reject');
+        const btnAccept = document.getElementById('btn-accept');
+        const btnEnd = document.getElementById('btn-end');
+        const controlsRing = document.getElementById('call-controls-ring');
+        const controlsActive = document.getElementById('call-controls-active');
+
         function attemptLogin() {
             const inputName = loginInput.value.trim().toLowerCase();
 
@@ -400,6 +555,9 @@
                 } else {
                     pillAlice.classList.add('active-user');
                 }
+
+                // Show Call Button
+                callBtn.style.display = 'flex';
 
                 initChatApp();
             } else {
@@ -422,9 +580,170 @@
             loginInput.style.borderColor = '#ddd';
         });
 
+        // --- CALL SYSTEM LOGIC ---
+
+        function formatTime(totalSeconds) {
+            const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const s = (totalSeconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function startCallTimer() {
+            callSeconds = 0;
+            callTimerDisplay.textContent = "00:00";
+            clearInterval(callTimerInterval);
+            callTimerInterval = setInterval(() => {
+                callSeconds++;
+                callTimerDisplay.textContent = formatTime(callSeconds);
+            }, 1000);
+        }
+
+        function stopCallTimer() {
+            clearInterval(callTimerInterval);
+        }
+
+        function resetCallUI() {
+            callOverlay.style.display = 'none';
+            callOverlay.classList.remove('pulsing');
+            stopCallTimer();
+            currentCallId = null;
+        }
+
+        async function initiateCall() {
+            const targetUser = username === 'bob' ? 'alice' : 'bob';
+            
+            // Check if user is online
+            const targetDot = targetUser === 'bob' ? dotBob : dotAlice;
+            if (!targetDot.classList.contains('online')) {
+                alert(`${targetUser.charAt(0).toUpperCase() + targetUser.slice(1)} is offline. You can only call online users.`);
+                return;
+            }
+
+            try {
+                const docRef = await addDoc(collection(db, "calls"), {
+                    caller: username,
+                    callee: targetUser,
+                    status: 'ringing',
+                    createdAt: serverTimestamp(),
+                    startedAt: null
+                });
+                currentCallId = docRef.id;
+                showOutgoingUI(targetUser);
+            } catch (e) {
+                console.error("Error starting call: ", e);
+            }
+        }
+
+        function showOutgoingUI(target) {
+            callOverlay.style.display = 'flex';
+            callOverlay.classList.add('pulsing');
+            callAvatarText.textContent = target.charAt(0).toUpperCase();
+            callStatusText.textContent = `Calling ${target}...`;
+            callTimerDisplay.textContent = "Ringing";
+            
+            controlsRing.style.display = 'flex';
+            btnAccept.style.display = 'none';
+            controlsActive.style.display = 'none';
+        }
+
+        function showIncomingUI(caller) {
+            callOverlay.style.display = 'flex';
+            callOverlay.classList.add('pulsing');
+            callAvatarText.textContent = caller.charAt(0).toUpperCase();
+            callStatusText.textContent = `${caller} is calling...`;
+            callTimerDisplay.textContent = "Incoming Call";
+
+            controlsRing.style.display = 'flex';
+            btnAccept.style.display = 'flex'; // Show accept button
+            controlsActive.style.display = 'none';
+        }
+
+        function showConnectedUI() {
+            callOverlay.classList.remove('pulsing');
+            callStatusText.textContent = "Connected";
+            startCallTimer();
+
+            controlsRing.style.display = 'none';
+            controlsActive.style.display = 'flex';
+        }
+
+        async function endCall() {
+            if (currentCallId) {
+                await updateDoc(doc(db, "calls", currentCallId), {
+                    status: 'ended',
+                    endedAt: serverTimestamp()
+                });
+            }
+            resetCallUI();
+        }
+
+        async function acceptCall() {
+            if (currentCallId) {
+                await updateDoc(doc(db, "calls", currentCallId), {
+                    status: 'connected',
+                    startedAt: serverTimestamp()
+                });
+            }
+        }
+
+        function listenForCalls() {
+            const callsRef = collection(db, "calls");
+            // Listen for calls where I am involved
+            const q = query(callsRef, where("caller", "==", username), where("status", "in", ["ringing", "connected"]));
+            const q2 = query(callsRef, where("callee", "==", username), where("status", "in", ["ringing", "connected"]));
+
+            const processSnapshot = (snapshot) => {
+                // If we are already in a call, ignore others unless it's the current one updating
+                if (currentCallId && !snapshot.docs.find(d => d.id === currentCallId)) return;
+
+                snapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    const callId = docSnap.id;
+
+                    // If we have a current call and this is a new doc, ignore (already in call)
+                    if (currentCallId && currentCallId !== callId) return;
+
+                    if (data.status === 'ringing') {
+                        if (data.callee === username) {
+                            // I am receiving a call
+                            currentCallId = callId;
+                            showIncomingUI(data.caller);
+                        } else if (data.caller === username) {
+                            // I am calling
+                            currentCallId = callId;
+                            showOutgoingUI(data.callee);
+                        }
+                    } else if (data.status === 'connected') {
+                        currentCallId = callId;
+                        showConnectedUI();
+                    }
+                });
+
+                // If snapshot is empty but we thought we were in a call, it might have been deleted/ended externally
+                if (snapshot.empty && currentCallId) {
+                    resetCallUI();
+                }
+            };
+
+            onSnapshot(q, processSnapshot);
+            onSnapshot(q2, processSnapshot);
+        }
+
+        // Call Event Listeners
+        callBtn.addEventListener('click', initiateCall);
+        btnReject.addEventListener('click', endCall);
+        btnAccept.addEventListener('click', acceptCall);
+        btnEnd.addEventListener('click', endCall);
+
+
+        // --- EXISTING CHAT APP LOGIC ---
+
         function initChatApp() {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
+
+            // Start Call Listener
+            listenForCalls();
 
             // --- PRESENCE SYSTEM (Starts immediately) ---
             initPresenceSystem(db, username);
@@ -624,6 +943,11 @@
             window.addEventListener('beforeunload', () => {
                 goOffline();
                 clearInterval(heartbeatInterval);
+                // Also end call if exists
+                if (currentCallId) {
+                    // We can't await here effectively, but fire and forget
+                    updateDoc(doc(db, "calls", currentCallId), { status: 'ended' });
+                }
             });
         }
     </script>
