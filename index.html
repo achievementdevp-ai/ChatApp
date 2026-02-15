@@ -421,6 +421,11 @@
         #send-btn:active {
             transform: scale(0.96);
         }
+
+        /* Hidden Audio Element */
+        #remoteAudio {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -481,6 +486,9 @@
                 <button class="call-action-btn btn-decline" id="btn-end">📞</button>
             </div>
         </div>
+
+        <!-- Remote Audio Stream -->
+        <audio id="remoteAudio" autoplay playsinline></audio>
     </div>
 
     <!-- JAVASCRIPT Logic -->
@@ -498,7 +506,8 @@
             setDoc,
             updateDoc,
             where,
-            deleteDoc
+            deleteDoc,
+            getDoc
         } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -516,6 +525,19 @@
         let currentCallId = null;
         let callTimerInterval = null;
         let callSeconds = 0;
+        let unsubscribeCallListener = null; // To detach specific call listener
+
+        // --- WEBRTC VARIABLES ---
+        let peerConnection = null;
+        let localStream = null;
+        let remoteStream = null;
+        
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
 
         const loginOverlay = document.getElementById('login-overlay');
         const loginInput = document.getElementById('login-username');
@@ -541,6 +563,7 @@
         const btnEnd = document.getElementById('btn-end');
         const controlsRing = document.getElementById('call-controls-ring');
         const controlsActive = document.getElementById('call-controls-active');
+        const remoteAudio = document.getElementById('remoteAudio');
 
         function attemptLogin() {
             const inputName = loginInput.value.trim().toLowerCase();
@@ -556,7 +579,6 @@
                     pillAlice.classList.add('active-user');
                 }
 
-                // Show Call Button
                 callBtn.style.display = 'flex';
 
                 initChatApp();
@@ -607,32 +629,219 @@
             callOverlay.classList.remove('pulsing');
             stopCallTimer();
             currentCallId = null;
+            if (unsubscribeCallListener) {
+                unsubscribeCallListener(); // Stop listening to this specific call
+                unsubscribeCallListener = null;
+            }
+        }
+
+        // --- WEBRTC FUNCTIONS ---
+
+        async function setupMedia() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                localStream = stream;
+                return stream;
+            } catch (err) {
+                console.error("Error accessing media devices.", err);
+                alert("Could not access microphone. Please allow permissions.");
+                throw err;
+            }
+        }
+
+        function createPeerConnection() {
+            peerConnection = new RTCPeerConnection(rtcConfig);
+
+            // Add local stream tracks to connection
+            if (localStream) {
+                localStream.getTracks().forEach(track => {
+                    peerConnection.addTrack(track, localStream);
+                });
+            }
+
+            // Handle incoming stream
+            peerConnection.ontrack = (event) => {
+                console.log("Received remote track");
+                remoteAudio.srcObject = event.streams[0];
+            };
+
+            // Handle ICE Candidates
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    // Send candidate to Firestore
+                    // We store candidates in a sub-collection 'candidates' inside the call doc
+                    const candidateRef = collection(db, `calls/${currentCallId}/candidates`);
+                    addDoc(candidateRef, event.candidate.toJSON());
+                }
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                if (peerConnection.connectionState === 'disconnected') {
+                    hangupLocal();
+                }
+            };
         }
 
         async function initiateCall() {
             const targetUser = username === 'bob' ? 'alice' : 'bob';
             
-            // Check if user is online
             const targetDot = targetUser === 'bob' ? dotBob : dotAlice;
             if (!targetDot.classList.contains('online')) {
-                alert(`${targetUser.charAt(0).toUpperCase() + targetUser.slice(1)} is offline. You can only call online users.`);
+                alert(`${targetUser.charAt(0).toUpperCase() + targetUser.slice(1)} is offline.`);
                 return;
             }
 
             try {
+                // 1. Setup Media
+                await setupMedia();
+                
+                // 2. Create Call Doc
                 const docRef = await addDoc(collection(db, "calls"), {
                     caller: username,
                     callee: targetUser,
                     status: 'ringing',
-                    createdAt: serverTimestamp(),
-                    startedAt: null
+                    createdAt: serverTimestamp()
                 });
+                
                 currentCallId = docRef.id;
                 showOutgoingUI(targetUser);
+
+                // 3. Listen for this specific call (to handle answer/end)
+                listenForCallUpdates(currentCallId, true);
+
+                // 4. Setup WebRTC
+                createPeerConnection();
+
+                // 5. Create Offer
+                const offerDescription = await peerConnection.createOffer();
+                await peerConnection.setLocalDescription(offerDescription);
+
+                const offer = {
+                    sdp: offerDescription.sdp,
+                    type: offerDescription.type,
+                };
+
+                await updateDoc(doc(db, "calls", currentCallId), { offer });
+
+                // 6. Listen for Answer
+                const callDoc = doc(db, "calls", currentCallId);
+                onSnapshot(callDoc, (snapshot) => {
+                    const data = snapshot.data();
+                    if (!peerConnection.currentRemoteDescription && data?.answer) {
+                        const answerDescription = new RTCSessionDescription(data.answer);
+                        peerConnection.setRemoteDescription(answerDescription);
+                    }
+                });
+
+                // 7. Listen for Remote ICE Candidates
+                const candidatesRef = collection(db, `calls/${currentCallId}/candidates`);
+                const qCandidates = query(candidatesRef, where("type", "==", "host")); // Listen for Callee's candidates (type 'host' usually or just filter logic)
+                // Actually simpler: just listen to all candidates and add them if they aren't ours.
+                // For this simple 2-person app, we can just listen to all candidates in the subcollection.
+                onSnapshot(candidatesRef, (snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        if (change.type === 'added') {
+                            const candidate = new RTCIceCandidate(change.doc.data());
+                            peerConnection.addIceCandidate(candidate);
+                        }
+                    });
+                });
+
             } catch (e) {
-                console.error("Error starting call: ", e);
+                console.error("Error initiating call: ", e);
+                hangupLocal();
             }
         }
+
+        async function answerCall() {
+            if (!currentCallId) return;
+
+            try {
+                // 1. Setup Media
+                await setupMedia();
+
+                // 2. Setup WebRTC
+                createPeerConnection();
+
+                // 3. Get Offer
+                const callDoc = await getDoc(doc(db, "calls", currentCallId));
+                const callData = callDoc.data();
+
+                const offerDescription = callData.offer;
+                await peerConnection.setRemoteDescription(new RTCSessionDescription(offerDescription));
+
+                // 4. Create Answer
+                const answerDescription = await peerConnection.createAnswer();
+                await peerConnection.setLocalDescription(answerDescription);
+
+                const answer = {
+                    type: answerDescription.type,
+                    sdp: answerDescription.sdp,
+                };
+
+                await updateDoc(doc(db, "calls", currentCallId), { answer, status: 'connected' });
+
+                // 5. Listen for Caller ICE Candidates
+                const candidatesRef = collection(db, `calls/${currentCallId}/candidates`);
+                onSnapshot(candidatesRef, (snapshot) => {
+                    snapshot.docChanges().forEach((change) => {
+                        if (change.type === 'added') {
+                            const candidate = new RTCIceCandidate(change.doc.data());
+                            peerConnection.addIceCandidate(candidate);
+                        }
+                    });
+                });
+
+            } catch (e) {
+                console.error("Error answering call: ", e);
+                hangupLocal();
+            }
+        }
+
+        // Listens to the specific call document to handle End events
+        function listenForCallUpdates(callId, isCaller) {
+            const docRef = doc(db, "calls", callId);
+            unsubscribeCallListener = onSnapshot(docRef, (docSnap) => {
+                const data = docSnap.data();
+                
+                // Handle Call Ended by other party
+                if (data.status === 'ended') {
+                    hangupLocal();
+                    return;
+                }
+
+                // Handle Status Change to Connected (for the caller)
+                if (isCaller && data.status === 'connected') {
+                    showConnectedUI();
+                }
+            });
+        }
+
+        function hangupLocal() {
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+                localStream = null;
+            }
+            remoteAudio.srcObject = null;
+            resetCallUI();
+        }
+
+        async function endCall() {
+            if (currentCallId) {
+                // Update DB first so other person knows
+                await updateDoc(doc(db, "calls", currentCallId), {
+                    status: 'ended'
+                });
+            }
+            hangupLocal();
+        }
+
+
+        // --- UI LOGIC ---
 
         function showOutgoingUI(target) {
             callOverlay.style.display = 'flex';
@@ -654,7 +863,7 @@
             callTimerDisplay.textContent = "Incoming Call";
 
             controlsRing.style.display = 'flex';
-            btnAccept.style.display = 'flex'; // Show accept button
+            btnAccept.style.display = 'flex'; 
             controlsActive.style.display = 'none';
         }
 
@@ -667,88 +876,45 @@
             controlsActive.style.display = 'flex';
         }
 
-        async function endCall() {
-            if (currentCallId) {
-                await updateDoc(doc(db, "calls", currentCallId), {
-                    status: 'ended',
-                    endedAt: serverTimestamp()
-                });
-            }
-            resetCallUI();
-        }
-
-        async function acceptCall() {
-            if (currentCallId) {
-                await updateDoc(doc(db, "calls", currentCallId), {
-                    status: 'connected',
-                    startedAt: serverTimestamp()
-                });
-            }
-        }
-
         function listenForCalls() {
-            const callsRef = collection(db, "calls");
-            // Listen for calls where I am involved
-            const q = query(callsRef, where("caller", "==", username), where("status", "in", ["ringing", "connected"]));
-            const q2 = query(callsRef, where("callee", "==", username), where("status", "in", ["ringing", "connected"]));
-
-            const processSnapshot = (snapshot) => {
-                // If we are already in a call, ignore others unless it's the current one updating
-                if (currentCallId && !snapshot.docs.find(d => d.id === currentCallId)) return;
+            // Query for active calls involving me
+            const q = query(collection(db, "calls"), where("status", "==", "ringing"));
+            
+            onSnapshot(q, (snapshot) => {
+                // If we are already in a call, ignore new incoming calls
+                if (currentCallId) return;
 
                 snapshot.forEach((docSnap) => {
                     const data = docSnap.data();
-                    const callId = docSnap.id;
-
-                    // If we have a current call and this is a new doc, ignore (already in call)
-                    if (currentCallId && currentCallId !== callId) return;
-
-                    if (data.status === 'ringing') {
-                        if (data.callee === username) {
-                            // I am receiving a call
-                            currentCallId = callId;
-                            showIncomingUI(data.caller);
-                        } else if (data.caller === username) {
-                            // I am calling
-                            currentCallId = callId;
-                            showOutgoingUI(data.callee);
-                        }
-                    } else if (data.status === 'connected') {
-                        currentCallId = callId;
-                        showConnectedUI();
+                    
+                    // If I am the callee
+                    if (data.callee === username) {
+                        currentCallId = docSnap.id;
+                        showIncomingUI(data.caller);
+                        
+                        // Start listening to this specific doc for updates (like 'ended')
+                        listenForCallUpdates(currentCallId, false);
                     }
                 });
-
-                // If snapshot is empty but we thought we were in a call, it might have been deleted/ended externally
-                if (snapshot.empty && currentCallId) {
-                    resetCallUI();
-                }
-            };
-
-            onSnapshot(q, processSnapshot);
-            onSnapshot(q2, processSnapshot);
+            });
         }
 
         // Call Event Listeners
         callBtn.addEventListener('click', initiateCall);
         btnReject.addEventListener('click', endCall);
-        btnAccept.addEventListener('click', acceptCall);
+        btnAccept.addEventListener('click', answerCall);
         btnEnd.addEventListener('click', endCall);
 
 
-        // --- EXISTING CHAT APP LOGIC ---
+        // --- CHAT & PRESENCE LOGIC ---
 
         function initChatApp() {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
 
-            // Start Call Listener
             listenForCalls();
-
-            // --- PRESENCE SYSTEM (Starts immediately) ---
             initPresenceSystem(db, username);
 
-            // --- MESSAGING SYSTEM ---
             async function sendMessage() {
                 const text = messageInput.value.trim();
                 if (text !== "") {
@@ -782,56 +948,35 @@
 
             const q = query(collection(db, "messages"), orderBy("createdAt"));
 
-            // --- UPDATED TIME LOGIC ---
             const formatMessageTime = (timestamp) => {
                 if (!timestamp) return '';
-
-                const date = timestamp.toDate(); // Convert Firestore Timestamp to JS Date
+                const date = timestamp.toDate();
                 const now = new Date();
-
-                // Helper to check if two dates are the same day
                 const isSameDay = (d1, d2) => {
                     return d1.getFullYear() === d2.getFullYear() &&
                            d1.getMonth() === d2.getMonth() &&
                            d1.getDate() === d2.getDate();
                 };
-
-                // Get time string HH:MM
                 const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-                if (isSameDay(date, now)) {
-                    return timeStr; // Just show time for today
-                }
-
-                // Calculate yesterday
+                if (isSameDay(date, now)) return timeStr;
                 const yesterday = new Date(now);
                 yesterday.setDate(yesterday.getDate() - 1);
-
-                if (isSameDay(date, yesterday)) {
-                    return `Yesterday, ${timeStr}`;
-                }
-
-                // For older dates, show e.g., "Oct 24, 10:30"
+                if (isSameDay(date, yesterday)) return `Yesterday, ${timeStr}`;
                 const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
                 return `${dateStr}, ${timeStr}`;
             };
 
             onSnapshot(q, (snapshot) => {
                 messageWindow.innerHTML = ""; 
-
                 snapshot.forEach((doc) => {
                     const data = doc.data();
                     if(!data.text) return; 
-
                     const msgDiv = document.createElement('div');
                     const isMe = data.sender === username;
-
                     msgDiv.classList.add('message');
                     msgDiv.classList.add(isMe ? 'sent' : 'received');
-
                     const safeText = data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                     const timeStr = formatMessageTime(data.createdAt);
-
                     const doubleCheckIcon = `
                         <div class="status-icon" title="Delivered">
                             <svg viewBox="0 0 24 24">
@@ -839,26 +984,17 @@
                             </svg>
                         </div>
                     `;
-
                     let contentHtml = `<span>${safeText}</span>`;
-                    if (isMe) {
-                        contentHtml = `<span>${safeText}</span>` + doubleCheckIcon;
-                    }
-                    // Add timestamp
+                    if (isMe) contentHtml += doubleCheckIcon;
                     contentHtml += `<span class="msg-time">${timeStr}</span>`;
-
                     msgDiv.innerHTML = `
                         <span class="sender-name">${data.sender}</span>
                         <div class="msg-bubble">
-                            <div class="msg-content">
-                                ${contentHtml}
-                            </div>
+                            <div class="msg-content">${contentHtml}</div>
                         </div>
                     `;
-
                     messageWindow.appendChild(msgDiv);
                 });
-
                 messageWindow.scrollTop = messageWindow.scrollHeight;
             });
         }
@@ -873,10 +1009,7 @@
                         state: 'online',
                         lastSeen: serverTimestamp()
                     }, { merge: true });
-                    console.log(`User ${currentUser} is now online`);
-                } catch (e) {
-                    console.error("Go Online Error:", e);
-                }
+                } catch (e) { console.error("Go Online Error:", e); }
             };
 
             const goOffline = async () => {
@@ -885,48 +1018,33 @@
                         state: 'offline',
                         lastSeen: serverTimestamp()
                     }, { merge: true });
-                } catch (e) {
-                    console.error("Go Offline Error:", e);
-                }
+                } catch (e) { console.error("Go Offline Error:", e); }
             };
 
             const startHeartbeat = () => {
-                goOnline(); // Initial call
+                goOnline();
                 heartbeatInterval = setInterval(async () => {
                     try {
-                        await updateDoc(myUserRef, {
-                            lastSeen: serverTimestamp()
-                        });
-                        console.log("Heartbeat sent");
-                    } catch (e) {
-                        console.error("Heartbeat Error:", e);
-                    }
-                }, 30000); // 30 seconds
+                        await updateDoc(myUserRef, { lastSeen: serverTimestamp() });
+                    } catch (e) { console.error("Heartbeat Error:", e); }
+                }, 30000);
             };
 
             const listenToUsers = () => {
                 onSnapshot(usersRef, (snapshot) => {
                     const now = Date.now();
-
                     snapshot.forEach((docSnap) => {
                         const user = docSnap.id;
                         const data = docSnap.data();
-
                         let targetDot = null;
                         if (user === 'bob') targetDot = dotBob;
                         if (user === 'alice') targetDot = dotAlice;
-
                         if (targetDot) {
-                            // Safety check for timestamp
                             let lastSeen = 0;
                             if (data.lastSeen && typeof data.lastSeen.toMillis === 'function') {
                                 lastSeen = data.lastSeen.toMillis();
                             }
-
                             const timeDiff = now - lastSeen;
-                            console.log(`Checking ${user}: Diff is ${timeDiff}ms`);
-
-                            // If timestamp is recent (less than 60s)
                             if (timeDiff < 60000) {
                                 targetDot.classList.add('online');
                             } else {
@@ -943,9 +1061,7 @@
             window.addEventListener('beforeunload', () => {
                 goOffline();
                 clearInterval(heartbeatInterval);
-                // Also end call if exists
                 if (currentCallId) {
-                    // We can't await here effectively, but fire and forget
                     updateDoc(doc(db, "calls", currentCallId), { status: 'ended' });
                 }
             });
