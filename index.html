@@ -242,11 +242,20 @@
             opacity: 0.8;
             margin-bottom: 2px; 
         }
-        
+
         .status-icon svg {
             fill: #a3d2fc; 
             width: 100%;
             height: 100%;
+        }
+
+        /* --- TIMESTAMP STYLES --- */
+        .msg-time {
+            font-size: 11px; /* Increased from 10px to fit text better */
+            opacity: 0.7;
+            margin-bottom: 2px;
+            margin-left: 6px; /* Add separation from text/icon */
+            white-space: nowrap;
         }
 
         #input-area {
@@ -291,7 +300,7 @@
         #send-btn:hover {
             background: #0073e6;
         }
-        
+
         #send-btn:active {
             transform: scale(0.96);
         }
@@ -303,11 +312,11 @@
     <div id="login-overlay">
         <div class="login-card">
             <h2>Login</h2>
-            
+
             <input type="text" id="login-username" class="login-input" placeholder="Enter username..." autocomplete="off">
-            
+
             <button id="login-btn" class="login-btn">Enter name</button>
-            
+
             <div id="error-message">Access Denied: User not allowed.</div>
         </div>
     </div>
@@ -327,7 +336,7 @@
                 </div>
             </div>
         </header>
-        
+
         <div id="message-window"></div>
 
         <div id="input-area">
@@ -380,7 +389,7 @@
 
         function attemptLogin() {
             const inputName = loginInput.value.trim().toLowerCase();
-            
+
             if (inputName === 'bob' || inputName === 'alice') {
                 username = inputName;
                 loginOverlay.style.display = 'none';
@@ -427,18 +436,18 @@
                     try {
                         sendBtn.disabled = true;
                         sendBtn.style.opacity = "0.7";
-                        
+
                         await addDoc(collection(db, "messages"), {
                             text: text,
                             sender: username,
                             createdAt: serverTimestamp()
                         });
                         messageInput.value = "";
-                        
+
                         sendBtn.disabled = false;
                         sendBtn.style.opacity = "1";
                         messageInput.focus();
-                        
+
                     } catch (e) {
                         console.error("Error adding document: ", e);
                         sendBtn.disabled = false;
@@ -454,21 +463,56 @@
 
             const q = query(collection(db, "messages"), orderBy("createdAt"));
 
+            // --- UPDATED TIME LOGIC ---
+            const formatMessageTime = (timestamp) => {
+                if (!timestamp) return '';
+
+                const date = timestamp.toDate(); // Convert Firestore Timestamp to JS Date
+                const now = new Date();
+
+                // Helper to check if two dates are the same day
+                const isSameDay = (d1, d2) => {
+                    return d1.getFullYear() === d2.getFullYear() &&
+                           d1.getMonth() === d2.getMonth() &&
+                           d1.getDate() === d2.getDate();
+                };
+
+                // Get time string HH:MM
+                const timeStr = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                if (isSameDay(date, now)) {
+                    return timeStr; // Just show time for today
+                }
+
+                // Calculate yesterday
+                const yesterday = new Date(now);
+                yesterday.setDate(yesterday.getDate() - 1);
+
+                if (isSameDay(date, yesterday)) {
+                    return `Yesterday, ${timeStr}`;
+                }
+
+                // For older dates, show e.g., "Oct 24, 10:30"
+                const dateStr = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+                return `${dateStr}, ${timeStr}`;
+            };
+
             onSnapshot(q, (snapshot) => {
                 messageWindow.innerHTML = ""; 
-                
+
                 snapshot.forEach((doc) => {
                     const data = doc.data();
                     if(!data.text) return; 
 
                     const msgDiv = document.createElement('div');
                     const isMe = data.sender === username;
-                    
+
                     msgDiv.classList.add('message');
                     msgDiv.classList.add(isMe ? 'sent' : 'received');
 
                     const safeText = data.text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                    
+                    const timeStr = formatMessageTime(data.createdAt);
+
                     const doubleCheckIcon = `
                         <div class="status-icon" title="Delivered">
                             <svg viewBox="0 0 24 24">
@@ -479,8 +523,10 @@
 
                     let contentHtml = `<span>${safeText}</span>`;
                     if (isMe) {
-                        contentHtml += doubleCheckIcon;
+                        contentHtml = `<span>${safeText}</span>` + doubleCheckIcon;
                     }
+                    // Add timestamp
+                    contentHtml += `<span class="msg-time">${timeStr}</span>`;
 
                     msgDiv.innerHTML = `
                         <span class="sender-name">${data.sender}</span>
@@ -542,11 +588,11 @@
             const listenToUsers = () => {
                 onSnapshot(usersRef, (snapshot) => {
                     const now = Date.now();
-                    
+
                     snapshot.forEach((docSnap) => {
                         const user = docSnap.id;
                         const data = docSnap.data();
-                        
+
                         let targetDot = null;
                         if (user === 'bob') targetDot = dotBob;
                         if (user === 'alice') targetDot = dotAlice;
@@ -557,10 +603,10 @@
                             if (data.lastSeen && typeof data.lastSeen.toMillis === 'function') {
                                 lastSeen = data.lastSeen.toMillis();
                             }
-                            
+
                             const timeDiff = now - lastSeen;
                             console.log(`Checking ${user}: Diff is ${timeDiff}ms`);
-                            
+
                             // If timestamp is recent (less than 60s)
                             if (timeDiff < 60000) {
                                 targetDot.classList.add('online');
@@ -572,8 +618,6 @@
                 });
             };
 
-            // FIX: Execute directly, do not wrap in window.addEventListener('load')
-            // By the time this function runs, the app is already loaded.
             startHeartbeat();
             listenToUsers();
 
